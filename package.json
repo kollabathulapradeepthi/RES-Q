@@ -1,0 +1,20 @@
+{
+  "name": "res-q-disaster-response",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "RES-Q — AI-Powered Drone Disaster Detection & Response System with Supabase Realtime Backend",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0"
+  }
+}

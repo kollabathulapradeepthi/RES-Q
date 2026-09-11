@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RES-Q — Sign In | AI-Powered Disaster Response System</title>
+  <meta name="description" content="Sign in to RES-Q — AI-Powered Drone Disaster Detection & Response Intelligence Platform." />
+  <meta name="theme-color" content="#030a14" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Supabase JS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <link rel="stylesheet" href="css/auth.css" />
+</head>
+<body>
+
+<!-- ── ANIMATED BACKGROUND ── -->
+<div class="auth-bg">
+  <img src="assets/auth_bg.jpg" alt="" class="auth-bg-img" />
+  <div class="auth-bg-overlay"></div>
+  <!-- Floating grid lines -->
+  <div class="auth-grid"></div>
+  <!-- Animated scan line -->
+  <div class="auth-scanline"></div>
+</div>
+
+<!-- ── CORNER BRANDING ── -->
+<div class="auth-corner-brand">
+  <div class="auth-logo-mark">R</div>
+  <div>
+    <div class="auth-corner-name">RES-Q</div>
+    <div class="auth-corner-sub">Emergency AI System</div>
+  </div>
+</div>
+
+<!-- ── STATUS BAR ── -->
+<div class="auth-status-bar">
+  <div class="auth-status-dot" id="auth-conn-dot"></div>
+  <span id="auth-conn-text">Checking connection…</span>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     AUTH CARD WRAPPER
+═══════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════
+     AUTH CARD WRAPPER
+═══════════════════════════════════════════════ -->
+<div class="auth-shell">
+
+  <!-- ── CARD CONTAINER ── -->
+  <div class="auth-card-container">
+
+    <!-- Top Brand -->
+    <div class="auth-card-brand">
+      <div class="auth-logo-lg">
+        <div class="auth-logo-ring"></div>
+        <span>R</span>
+      </div>
+      <div class="auth-card-title">RES-Q</div>
+      <div class="auth-card-tagline">Smarter Coordination. Faster Response. More Lives Saved.</div>
+    </div>
+
+    <!-- ── TAB / TOGGLE: SIGN IN | SIGN UP ── -->
+    <div class="auth-tabs-toggle" id="auth-tabs-bar">
+      <button type="button" class="auth-toggle-btn active" id="tab-login" onclick="showScreen('login')">SIGN IN</button>
+      <button type="button" class="auth-toggle-btn" id="tab-register" onclick="showScreen('register')">SIGN UP</button>
+    </div>
+
+    <!-- ─── SCREEN: LOGIN ─── -->
+    <div class="auth-screen-panel active" id="screen-login">
+      <h2 class="auth-screen-title">Welcome Back</h2>
+      <p class="auth-screen-sub">Sign in to continue to RES-Q</p>
+
+      <!-- Error banner -->
+      <div class="auth-error-banner" id="login-error" style="display:none;"></div>
+      <div class="auth-success-banner" id="login-success" style="display:none;"></div>
+
+      <form id="login-form" novalidate autocomplete="on">
+
+        <!-- USERNAME / EMAIL ID -->
+        <div class="auth-field-group" id="fg-login-email">
+          <label class="auth-label" for="login-email">USERNAME / EMAIL ID</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">👤</span>
+            <input
+              type="text"
+              id="login-email"
+              name="username_or_email"
+              class="auth-input"
+              placeholder="Enter username or email"
+              autocomplete="username email"
+              required
+            />
+          </div>
+          <div class="auth-field-err" id="err-login-email"></div>
+        </div>
+
+        <!-- PASSWORD -->
+        <div class="auth-field-group" id="fg-login-password">
+          <label class="auth-label" for="login-password">PASSWORD</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">🔒</span>
+            <input
+              type="password"
+              id="login-password"
+              name="password"
+              class="auth-input"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              required
+            />
+            <button type="button" class="auth-eye-btn" id="login-eye" onclick="toggleEye('login-password','login-eye')" title="Show / Hide Password">👁</button>
+          </div>
+          <div class="auth-field-err" id="err-login-password"></div>
+        </div>
+
+        <!-- Remember me + Forgot Password -->
+        <div class="auth-row-between">
+          <label class="auth-checkbox-wrap">
+            <input type="checkbox" id="login-remember" />
+            <span class="auth-checkbox-custom"></span>
+            <span class="auth-checkbox-label">Remember me</span>
+          </label>
+          <button type="button" class="auth-link-btn" id="goto-forgot" onclick="showScreen('forgot')">Forgot Password?</button>
+        </div>
+
+        <!-- SIGN IN button -->
+        <button type="submit" class="auth-btn auth-btn-primary" id="login-submit">
+          <span class="auth-btn-text">SIGN IN</span>
+          <span class="auth-btn-spinner" id="login-spinner" style="display:none;"></span>
+        </button>
+
+      </form>
+
+      <div class="auth-switch-line">
+        New to RES-Q?
+        <button type="button" class="auth-link-btn-inline" onclick="showScreen('register')">Create an account</button>
+      </div>
+    </div>
+
+
+    <!-- ─── SCREEN: REGISTER (CREATE ACCOUNT) ─── -->
+    <div class="auth-screen-panel" id="screen-register">
+      <h2 class="auth-screen-title">Create Your RES-Q Account</h2>
+      <p class="auth-screen-sub">Register to access emergency-response services.</p>
+
+      <div class="auth-error-banner" id="register-error" style="display:none;"></div>
+      <div class="auth-success-banner" id="register-success" style="display:none;"></div>
+
+      <form id="register-form" novalidate autocomplete="off">
+
+        <!-- NAME -->
+        <div class="auth-field-group" id="fg-reg-name">
+          <label class="auth-label" for="reg-name">NAME</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">👤</span>
+            <input type="text" id="reg-name" class="auth-input" placeholder="Enter your full name" autocomplete="name" required />
+          </div>
+          <div class="auth-field-err" id="err-reg-name"></div>
+        </div>
+
+        <!-- MAIL ID -->
+        <div class="auth-field-group" id="fg-reg-email">
+          <label class="auth-label" for="reg-email">MAIL ID</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">✉</span>
+            <input type="email" id="reg-email" class="auth-input" placeholder="Enter your email address" autocomplete="email" required />
+          </div>
+          <div class="auth-field-err" id="err-reg-email"></div>
+        </div>
+
+        <!-- PHONE NUMBER -->
+        <div class="auth-field-group" id="fg-reg-phone">
+          <label class="auth-label" for="reg-phone">PHONE NUMBER</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon auth-country-prefix">+91</span>
+            <input type="tel" id="reg-phone" class="auth-input auth-input-phone" placeholder="Enter your mobile number" autocomplete="tel" required />
+          </div>
+          <div class="auth-field-err" id="err-reg-phone"></div>
+        </div>
+
+        <!-- CREATE PASSWORD -->
+        <div class="auth-field-group" id="fg-reg-password">
+          <label class="auth-label" for="reg-password">CREATE PASSWORD</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="reg-password" class="auth-input" placeholder="Create a password" autocomplete="new-password" required oninput="updatePasswordStrength(this.value)" />
+            <button type="button" class="auth-eye-btn" id="reg-eye" onclick="toggleEye('reg-password','reg-eye')" title="Show / Hide Password">👁</button>
+          </div>
+          <!-- Password strength indicator: WEAK / MEDIUM / STRONG -->
+          <div class="auth-strength-wrap" id="strength-wrap" style="display:none;">
+            <div class="auth-strength-bar">
+              <div class="auth-strength-fill" id="strength-fill"></div>
+            </div>
+            <span class="auth-strength-label" id="strength-label">WEAK</span>
+          </div>
+          <div class="auth-field-err" id="err-reg-password"></div>
+        </div>
+
+        <!-- CONFIRM PASSWORD -->
+        <div class="auth-field-group" id="fg-reg-confirm">
+          <label class="auth-label" for="reg-confirm">CONFIRM PASSWORD</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="reg-confirm" class="auth-input" placeholder="Confirm your password" autocomplete="new-password" required oninput="checkPasswordMatch()" />
+            <button type="button" class="auth-eye-btn" id="confirm-eye" onclick="toggleEye('reg-confirm','confirm-eye')" title="Show / Hide Password">👁</button>
+          </div>
+          <div class="auth-match-indicator" id="pw-match-indicator" style="display:none;"></div>
+          <div class="auth-field-err" id="err-reg-confirm"></div>
+        </div>
+
+        <!-- CREATE ACCOUNT button -->
+        <button type="submit" class="auth-btn auth-btn-primary" id="register-submit">
+          <span class="auth-btn-text">CREATE ACCOUNT</span>
+          <span class="auth-btn-spinner" id="register-spinner" style="display:none;"></span>
+        </button>
+
+      </form>
+
+      <div class="auth-switch-line">
+        Already have an account?
+        <button type="button" class="auth-link-btn-inline" onclick="showScreen('login')">Sign in</button>
+      </div>
+    </div>
+
+
+    <!-- ─── SCREEN: FORGOT PASSWORD ─── -->
+    <div class="auth-screen-panel" id="screen-forgot">
+      <h2 class="auth-screen-title">Reset Password</h2>
+      <p class="auth-screen-sub">Enter your email address to receive password reset instructions.</p>
+
+      <div class="auth-error-banner" id="forgot-error" style="display:none;"></div>
+      <div class="auth-success-banner" id="forgot-success" style="display:none;"></div>
+
+      <form id="forgot-form" novalidate>
+
+        <div class="auth-field-group" id="fg-forgot-email">
+          <label class="auth-label" for="forgot-email">EMAIL ID</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">✉</span>
+            <input type="email" id="forgot-email" class="auth-input" placeholder="Enter your email address" required />
+          </div>
+          <div class="auth-field-err" id="err-forgot-email"></div>
+        </div>
+
+        <button type="submit" class="auth-btn auth-btn-primary" id="forgot-submit">
+          <span class="auth-btn-text">SEND RESET LINK</span>
+          <span class="auth-btn-spinner" id="forgot-spinner" style="display:none;"></span>
+        </button>
+
+      </form>
+
+      <div class="auth-switch-line">
+        <button type="button" class="auth-link-btn-inline" onclick="showScreen('login')">← Back to Sign In</button>
+      </div>
+    </div>
+
+
+    <!-- ─── SCREEN: EMAIL VERIFICATION ─── -->
+    <div class="auth-screen-panel" id="screen-verify">
+      <div class="auth-verify-box">
+        <div style="font-size:2.5rem;margin-bottom:12px;">📧</div>
+        <h2 class="auth-screen-title" style="margin-bottom:8px;">Check Your Email</h2>
+        <blockquote class="auth-quote">We sent a verification link to your email address.</blockquote>
+        <div class="auth-verify-email-badge" id="verify-email-display"></div>
+      </div>
+
+      <button type="button" class="auth-btn auth-btn-primary" style="margin-top:20px;" onclick="showScreen('login')">
+        <span class="auth-btn-text">BACK TO SIGN IN</span>
+      </button>
+
+      <div class="auth-switch-line" style="margin-top:16px;">
+        Didn't receive the email? <button type="button" class="auth-link-btn-inline" onclick="resendVerificationEmail()">Resend link</button>
+      </div>
+    </div>
+
+    <!-- System info footer -->
+    <div class="auth-card-footer">
+      <span>🔐 Supabase Auth · AES-256 Encrypted</span>
+      <span>v3.2.1-PROD</span>
+    </div>
+
+  </div><!-- /auth-card-container -->
+
+</div><!-- /auth-shell -->
+
+
+<!-- ── LOADING OVERLAY ── -->
+<div class="auth-loading-overlay" id="auth-loading-overlay">
+  <div class="auth-loading-inner">
+    <div class="auth-loading-logo">R</div>
+    <div class="auth-loading-text">RES-Q</div>
+    <div class="auth-loading-sub">Verifying session…</div>
+    <div class="auth-loading-dots">
+      <div></div><div></div><div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script src="js/auth.js"></script>
+
+</body>
+</html>
