@@ -1,0 +1,1598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RES-Q — AI-Powered Drone Disaster Detection &amp; Response System</title>
+  <meta name="description" content="RES-Q: AI-powered drone disaster detection and emergency response command center. Real-time monitoring of floods, earthquakes, fires and more." />
+  <meta name="theme-color" content="#030a14" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Three.js 3D Engine & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Supabase JS Client SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- ── SESSION GUARD: redirect to login if not authenticated ── -->
+  <script>
+    (function () {
+      const AUTH_URL     = 'auth.html';
+      const STORAGE_URL  = 'RESQ_SUPABASE_URL';
+      const STORAGE_KEY  = 'RESQ_SUPABASE_ANON_KEY';
+      const url      = localStorage.getItem(STORAGE_URL)  || '';
+      const anonKey  = localStorage.getItem(STORAGE_KEY) || '';
+      const isDemo   = !url || url.includes('your-project') || !anonKey || anonKey.includes('your-anon-key');
+      const authSession = sessionStorage.getItem('resq_authenticated_session');
+
+      if (isDemo) {
+        window.__RESQ_DEMO_MODE = true;
+        if (!authSession) {
+          window.location.replace(AUTH_URL);
+          return;
+        }
+        return;
+      }
+
+      try {
+        const client = window.supabase.createClient(url, anonKey, {
+          auth: { persistSession: true, storageKey: 'resq_auth_token' }
+        });
+        client.auth.getSession().then(({ data: { session } }) => {
+          if (!session) {
+            window.location.replace(AUTH_URL);
+          } else {
+            window.__RESQ_SESSION  = session;
+            window.__RESQ_USER     = session.user;
+            window.__RESQ_CLIENT   = client;
+            sessionStorage.setItem('resq_authenticated_session', session.access_token);
+          }
+        }).catch(() => {
+          if (!authSession) {
+            window.location.replace(AUTH_URL);
+          }
+        });
+      } catch (e) {
+        if (!authSession) {
+          window.location.replace(AUTH_URL);
+        }
+      }
+    })();
+  </script>
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/animations.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     APP SHELL
+═══════════════════════════════════════════════════════════ -->
+<div class="app-shell">
+
+  <!-- ── TOP BAR ── -->
+  <header class="topbar">
+
+    <!-- Brand -->
+    <div class="topbar-brand">
+      <div class="logo-mark">R</div>
+      <div>
+        <div class="brand-name">RES-Q</div>
+        <div class="brand-sub">AI Disaster Response</div>
+      </div>
+    </div>
+
+    <!-- Center: Disaster + Location -->
+    <div class="topbar-center">
+      <div class="disaster-label">⚠ ACTIVE — SEVERE FLOOD EVENT</div>
+      <div class="location-label">
+        📍 Krishna River Basin · Vijayawada, AP, India &nbsp;|&nbsp;
+        <span id="hdr-lat">16.506200</span>, <span id="hdr-lng">80.648000</span>
+      </div>
+    </div>
+
+    <!-- Right controls -->
+    <div class="topbar-right">
+      <div class="mode-badge demo" id="data-mode-badge" onclick="toggleDataMode()" title="Click to toggle between LIVE (Supabase DB) and DEMO (Local Simulation) mode">
+        <span id="data-mode-icon">🟠</span> <span id="data-mode-text">DEMO MODE</span>
+      </div>
+      <div class="system-status" id="supabase-status-btn" onclick="openSupabaseModal()" style="cursor:pointer;" title="Click to inspect/configure Supabase Database connection">
+        <span class="dot dot-critical" id="supabase-status-badge"></span>
+        <span id="supabase-status-text">🔴 DATABASE OFFLINE</span>
+      </div>
+      <div class="drone-connection">
+        <span class="dot dot-cyan"></span>
+        D-01 Connected
+      </div>
+      <button class="topbar-icon-btn" id="notif-btn" title="Alerts">
+        🔔
+        <span class="notif-badge" id="notif-badge" style="display:none;">0</span>
+      </button>
+      <!-- User Avatar with dropdown -->
+      <div class="user-avatar-wrap" id="user-avatar-wrap">
+        <div class="user-avatar" id="user-avatar-btn" title="User profile" onclick="toggleUserMenu()" style="cursor:pointer;">PK</div>
+        <div class="user-dropdown" id="user-dropdown" style="display:none;">
+          <div class="user-dropdown-header">
+            <div class="user-dropdown-name" id="user-dd-name">Pradeep K.</div>
+            <div class="user-dropdown-email" id="user-dd-email">operator@resq.in</div>
+            <div class="user-dropdown-role">🟢 Authenticated · Control Operator</div>
+          </div>
+          <div class="user-dropdown-divider"></div>
+          <button class="user-dropdown-item" onclick="handleLogout()">🚪 Sign Out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── NAV BAR ── -->
+  <nav class="navbar">
+    <button class="nav-item active" data-page="dashboard">
+      ⚡ Dashboard
+    </button>
+    <button class="nav-item" data-page="3d">
+      🎮 3D Digital Twin
+    </button>
+    <button class="nav-item" data-page="video">
+      🎥 Live Video
+    </button>
+    <button class="nav-item" data-page="map">
+      📍 Live Map
+    </button>
+    <button class="nav-item" data-page="detections">
+      🔍 Detections
+    </button>
+    <button class="nav-item" data-page="missions">
+      🚁 Missions
+    </button>
+    <button class="nav-item" data-page="orchestrator">
+      🤖 AI Orchestrator
+    </button>
+    <button class="nav-item" data-page="reports">
+      📋 Reports
+    </button>
+  </nav>
+
+  <!-- ── MAIN CONTENT ── -->
+  <main class="main-content">
+
+    <!-- ╔═══════════════════════════════╗
+         ║   1. DASHBOARD                ║
+         ╚═══════════════════════════════╝ -->
+    <section class="page-view active" id="page-dashboard">
+
+      <!-- Stats Bar -->
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-label">Survivors Found</div>
+          <div class="stat-value text-critical" id="stat-survivors">0</div>
+          <div class="stat-sub">This mission</div>
+          <div class="stat-icon">👤</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Incidents</div>
+          <div class="stat-value text-warning" id="stat-incidents">0</div>
+          <div class="stat-sub">Logged &amp; reported</div>
+          <div class="stat-icon">⚠️</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Critical Alerts</div>
+          <div class="stat-value text-critical" id="stat-critical">0</div>
+          <div class="stat-sub">Requires immediate action</div>
+          <div class="stat-icon">🚨</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Area Scanned</div>
+          <div class="stat-value text-cyan" id="stat-area">0 km²</div>
+          <div class="stat-sub">Flood zone coverage</div>
+          <div class="stat-icon">🗺️</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Coverage</div>
+          <div class="stat-value text-success" id="stat-coverage">0%</div>
+          <div class="stat-sub">Mission sector</div>
+          <div class="stat-icon">📡</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Mission Time</div>
+          <div class="stat-value text-blue" id="mission-elapsed">00:00</div>
+          <div class="stat-sub">D-01 Flight duration</div>
+          <div class="stat-icon">⏱️</div>
+        </div>
+      </div>
+
+      <!-- Main grid -->
+      <div class="dashboard-grid">
+
+        <!-- LEFT COLUMN -->
+        <div class="dashboard-left">
+
+          <!-- ── LIVE DISASTER MAP PANEL ── -->
+          <div class="card map-panel" style="height:520px;">
+            <div class="card-header">
+              <span class="section-title">📍 LIVE DISASTER MAP</span>
+              <button class="btn btn-ghost btn-sm" onclick="navigate('map')">Full Map ↗</button>
+            </div>
+            <div id="map" style="height:calc(100% - 44px);border-radius:0 0 var(--radius-lg) var(--radius-lg);"></div>
+          </div>
+
+        </div><!-- /dashboard-left -->
+
+        <!-- RIGHT COLUMN -->
+        <div class="dashboard-right">
+
+          <!-- ── DRONE TELEMETRY ── -->
+          <div class="card">
+            <div class="card-header">
+              <span class="section-title">🚁 DRONE STATUS (<span id="tele-drone-id" style="color:var(--cyan);">D-01</span>)</span>
+              <div class="flex items-center gap-2">
+                <div class="pulse-dot-wrap green" style="width:8px;height:8px;">
+                  <div class="pulse-dot-inner" style="width:5px;height:5px;"></div>
+                </div>
+                <span id="tele-status" style="font-size:0.70rem;font-weight:700;color:var(--success);letter-spacing:0.08em;">LIVE</span>
+              </div>
+            </div>
+            <div class="card-body p-3">
+              <!-- Battery -->
+              <div class="tele-row">
+                <span class="tele-key">Battery</span>
+                <div class="flex items-center gap-2">
+                  <div style="width:48px;">
+                    <div class="progress-bar-wrap">
+                      <div class="progress-bar-fill" id="battery-bar" style="width:78%;"></div>
+                    </div>
+                  </div>
+                  <span class="tele-val" id="tele-battery">78%</span>
+                </div>
+              </div>
+              <div class="telemetry-grid">
+                <div class="tele-row">
+                  <span class="tele-key">Altitude</span>
+                  <span class="tele-val" id="tele-altitude">84 m</span>
+                </div>
+                <div class="tele-row">
+                  <span class="tele-key">Speed</span>
+                  <span class="tele-val" id="tele-speed">18 km/h</span>
+                </div>
+                <div class="tele-row">
+                  <span class="tele-key">Heading</span>
+                  <span class="tele-val" id="tele-heading">145°</span>
+                </div>
+                <div class="tele-row">
+                  <span class="tele-key">GPS</span>
+                  <span class="tele-val text-success" id="tele-gps">LOCKED</span>
+                </div>
+                <div class="tele-row">
+                  <span class="tele-key">Temp</span>
+                  <span class="tele-val" id="tele-temp">42°C</span>
+                </div>
+                <div class="tele-row">
+                  <span class="tele-key">Satellites</span>
+                  <span class="tele-val" id="tele-satellites">14 sats</span>
+                </div>
+              </div>
+              <div class="divider"></div>
+              <div class="tele-row">
+                <span class="tele-key">Latitude</span>
+                <span class="tele-val" style="font-size:0.70rem;" id="tele-lat">16.506200</span>
+              </div>
+              <div class="tele-row">
+                <span class="tele-key">Longitude</span>
+                <span class="tele-val" style="font-size:0.70rem;" id="tele-lng">80.648000</span>
+              </div>
+              <div class="divider"></div>
+              <div class="tele-row">
+                <span class="tele-key">Signal</span>
+                <div class="flex items-center gap-2">
+                  <div class="signal-bars">
+                    <div class="signal-bar active"></div>
+                    <div class="signal-bar active"></div>
+                    <div class="signal-bar active"></div>
+                    <div class="signal-bar active"></div>
+                    <div class="signal-bar"></div>
+                  </div>
+                  <span class="tele-val" id="tele-signal">94%</span>
+                </div>
+              </div>
+              <div class="tele-row">
+                <span class="tele-key">Camera</span>
+                <span class="tele-val text-success" id="tele-camera">● LIVE</span>
+              </div>
+              <div class="tele-row">
+                <span class="tele-key">Flight Time</span>
+                <span class="tele-val" id="tele-flight-time">21:42</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── AI ORCHESTRATOR MINI ── -->
+          <div class="card flex-1">
+            <div class="card-header">
+              <span class="section-title">🤖 AI ORCHESTRATOR</span>
+              <button class="btn btn-ghost btn-xs" onclick="navigate('orchestrator')">Full ↗</button>
+            </div>
+            <div class="card-body p-3">
+              <div class="ai-thinking" id="ai-thinking" style="opacity:0;transition:opacity 0.3s;">
+                <div class="waveform">
+                  <div class="waveform-bar"></div>
+                  <div class="waveform-bar"></div>
+                  <div class="waveform-bar"></div>
+                  <div class="waveform-bar"></div>
+                  <div class="waveform-bar"></div>
+                  <div class="waveform-bar"></div>
+                  <div class="waveform-bar"></div>
+                </div>
+                <span>AI analyzing…</span>
+              </div>
+              <div class="scroll-panel" style="max-height:180px;" id="ai-feed">
+                <!-- AI feed items injected here -->
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /dashboard-right -->
+      </div><!-- /dashboard-grid -->
+
+      <!-- ── LATEST AI CAPTURE + INCIDENT FEED ── -->
+      <div class="grid grid-cols-2 gap-4 mt-4">
+
+        <!-- Capture panel -->
+        <div class="card" id="capture-panel">
+          <div class="card-header">
+            <span class="section-title">📷 LATEST AI DETECTION</span>
+            <div id="capture-severity">
+              <span class="badge badge-cyan">AWAITING DETECTION</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="grid grid-cols-2 gap-4">
+              <!-- Capture image -->
+              <div>
+                <div class="capture-img-wrap">
+                  <canvas id="capture-canvas" style="width:100%;height:100%;"></canvas>
+                  <div class="capture-overlay" id="capture-coords-overlay">
+                    Awaiting first detection…
+                  </div>
+                </div>
+              </div>
+              <!-- Capture details -->
+              <div>
+                <div style="font-family:var(--font-display);font-size:1.05rem;font-weight:700;color:var(--text-bright);margin-bottom:var(--space-2);" id="capture-label">
+                  — Awaiting Detection —
+                </div>
+                <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:var(--space-3);line-height:1.5;" id="capture-desc">
+                  AI vision pipeline active. Next detection imminent.
+                </div>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                  <div>
+                    <div style="font-size:0.60rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:2px;">Latitude</div>
+                    <div class="coord-box" id="capture-lat">—</div>
+                  </div>
+                  <div>
+                    <div style="font-size:0.60rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:2px;">Longitude</div>
+                    <div class="coord-box" id="capture-lng">—</div>
+                  </div>
+                  <div>
+                    <div style="font-size:0.60rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:2px;">Altitude</div>
+                    <div class="coord-box" id="capture-alt">—</div>
+                  </div>
+                  <div>
+                    <div style="font-size:0.60rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:2px;">GPS Accuracy</div>
+                    <div class="coord-box" id="capture-gps-acc">—</div>
+                  </div>
+                </div>
+                <div class="flex gap-2 mb-3">
+                  <div style="flex:1;">
+                    <div style="font-size:0.60rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:2px;">AI Confidence</div>
+                    <div class="coord-box" id="capture-confidence">—</div>
+                  </div>
+                  <div style="flex:1;">
+                    <div style="font-size:0.60rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:2px;">Timestamp</div>
+                    <div class="coord-box" id="capture-time">—</div>
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <button class="btn btn-ghost btn-sm flex-1" id="capture-locate-btn">📍 Locate on Map</button>
+                  <button class="btn btn-ghost btn-sm flex-1" onclick="navigate('detections')">🔍 View All</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Incident feed -->
+        <div class="card">
+          <div class="card-header">
+            <span class="section-title">⚠️ ACTIVE INCIDENTS</span>
+            <button class="btn btn-ghost btn-xs" onclick="navigate('detections')">All Incidents ↗</button>
+          </div>
+          <div class="card-body p-3">
+            <div class="scroll-panel scroll-panel-lg" id="incident-feed">
+              <div style="text-align:center;padding:var(--space-6);color:var(--text-muted);font-size:0.78rem;">
+                🔍 Monitoring… First detection imminent.
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /capture + incidents grid -->
+
+    </section><!-- /page-dashboard -->
+
+
+    <!-- ╔═══════════════════════════════╗
+         ║   1B. 3D DIGITAL TWIN PAGE    ║
+         ╚═══════════════════════════════╝ -->
+    <section class="page-view" id="page-3d">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="page-title" style="margin:0;">🎮 3D DRONE DIGITAL TWIN &amp; DISASTER SPATIAL ENGINE</h1>
+        <div class="flex gap-2">
+          <div class="badge badge-cyan">🚁 D-01 3D DIGITAL TWIN ACTIVE</div>
+          <div class="badge badge-success">● WEBGL 3D REAL-TIME</div>
+        </div>
+      </div>
+
+      <!-- Main 3D Interactive Viewport -->
+      <div class="viewport-3d-wrap">
+        <div id="canvas-3d-container" class="canvas-3d"></div>
+
+        <!-- Top HUD Controls -->
+        <div class="hud-3d-top">
+          <!-- Camera Mode Selector -->
+          <div class="hud-pill-group">
+            <span style="font-size:0.65rem;color:var(--text-muted);font-weight:700;letter-spacing:0.08em;text-transform:uppercase;align-self:center;padding:0 4px;">CAM:</span>
+            <button class="hud-pill-btn active" onclick="set3DCam('orbit', this)">🔄 Orbit</button>
+            <button class="hud-pill-btn" onclick="set3DCam('follow', this)">🚁 Chase Cam</button>
+            <button class="hud-pill-btn" onclick="set3DCam('fpv', this)">🎯 FPV Sensor</button>
+            <button class="hud-pill-btn" onclick="set3DCam('topdown', this)">🗺️ Top-Down</button>
+          </div>
+
+          <!-- Tactical Shader / Render Mode -->
+          <div class="hud-pill-group">
+            <span style="font-size:0.65rem;color:var(--text-muted);font-weight:700;letter-spacing:0.08em;text-transform:uppercase;align-self:center;padding:0 4px;">VIEW:</span>
+            <button class="hud-pill-btn active" onclick="set3DShader('standard', this)">Tactical RGB</button>
+            <button class="hud-pill-btn" onclick="set3DShader('lidar', this)">📡 LiDAR Cloud</button>
+            <button class="hud-pill-btn" onclick="set3DShader('thermal', this)">🔥 FLIR Thermal</button>
+            <button class="hud-pill-btn" onclick="set3DShader('wireframe', this)">📐 CAD Wireframe</button>
+          </div>
+
+          <!-- Exploded CAD View Toggle -->
+          <div class="hud-pill-group">
+            <button class="hud-pill-btn" id="btn-explode-3d" onclick="toggle3DExplode(this)">💥 Explode CAD</button>
+          </div>
+        </div>
+
+        <!-- Bottom HUD Controls & Telemetry -->
+        <div class="hud-3d-bottom">
+          <!-- Flood Level Slider -->
+          <div class="hud-tele-widget flex items-center gap-3">
+            <span style="font-size:0.70rem;font-weight:700;color:var(--cyan);letter-spacing:0.06em;">🌊 FLOOD SURGE:</span>
+            <input type="range" id="flood-slider" min="-2.0" max="4.5" step="0.1" value="1.2" style="width:110px;accent-color:var(--cyan);cursor:pointer;" oninput="Drone3DEngine.setFloodLevel(this.value)" />
+            <span id="flood-level-val" style="font-family:var(--font-mono);font-size:0.75rem;color:#fff;font-weight:700;min-width:40px;">1.2 m</span>
+          </div>
+
+          <!-- Real-Time Attitude & Flight Telemetry HUD -->
+          <div class="hud-tele-widget flex items-center gap-4">
+            <div>
+              <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Altitude</div>
+              <div style="font-family:var(--font-mono);font-size:0.80rem;font-weight:700;color:var(--cyan);" id="hud-3d-alt">84m</div>
+            </div>
+            <div>
+              <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Speed</div>
+              <div style="font-family:var(--font-mono);font-size:0.80rem;font-weight:700;color:#fff;" id="hud-3d-spd">18 km/h</div>
+            </div>
+            <div>
+              <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Heading</div>
+              <div style="font-family:var(--font-mono);font-size:0.80rem;font-weight:700;color:var(--cyan);" id="hud-3d-hdg">145°</div>
+            </div>
+            <div>
+              <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Pitch</div>
+              <div style="font-family:var(--font-mono);font-size:0.80rem;font-weight:700;color:#fff;" id="hud-3d-pitch">0.0°</div>
+            </div>
+            <div>
+              <div style="font-size:0.55rem;color:var(--text-muted);text-transform:uppercase;">Roll</div>
+              <div style="font-family:var(--font-mono);font-size:0.80rem;font-weight:700;color:#fff;" id="hud-3d-roll">0.0°</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hardware Component X-Ray Inspector & Diagnostics -->
+      <div class="card mt-4">
+        <div class="card-header">
+          <span class="section-title">🔍 DRONE HARDWARE &amp; SENSOR DIGITAL TWIN INSPECTOR</span>
+          <div class="badge badge-cyan">DIAGNOSTICS NOMINAL</div>
+        </div>
+        <div class="card-body">
+          <div class="flex gap-2 mb-3 overflow-x-auto pb-1">
+            <button class="btn btn-ghost btn-sm active" onclick="selectComp('propulsion', this)">⚡ Propulsion (Motors &amp; Rotors)</button>
+            <button class="btn btn-ghost btn-sm" onclick="selectComp('gimbal', this)">📷 3-Axis 4K &amp; Thermal Gimbal</button>
+            <button class="btn btn-ghost btn-sm" onclick="selectComp('jetson', this)">🧠 NVIDIA Jetson AGX AI</button>
+            <button class="btn btn-ghost btn-sm" onclick="selectComp('lidar', this)">📡 Solid-State LiDAR Mapper</button>
+            <button class="btn btn-ghost btn-sm" onclick="selectComp('rtk', this)">🛰️ Dual RTK-GNSS Array</button>
+            <button class="btn btn-ghost btn-sm" onclick="selectComp('battery', this)">🔋 6S 22000mAh Smart Battery</button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4" style="background:rgba(0,245,255,0.02);padding:var(--space-4);border-radius:var(--radius-md);border:1px solid var(--border-subtle);">
+            <div>
+              <div style="font-family:var(--font-display);font-size:1.05rem;font-weight:700;color:var(--cyan);margin-bottom:4px;" id="inspect-comp-name">
+                Propulsion System (4x Brushless Motors)
+              </div>
+              <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:var(--space-2);" id="inspect-comp-spec">
+                1200W High-Torque Waterproof Motors · 17-inch Carbon Propellers
+              </div>
+              <div style="font-family:var(--font-mono);font-size:0.70rem;color:var(--success);background:rgba(34,197,94,0.08);padding:6px 10px;border-radius:var(--radius-sm);border:1px solid rgba(34,197,94,0.2);" id="inspect-comp-status">
+                RPM: 4,820 · Temp: 42°C · Draw: 24.2A · Efficiency: 94%
+              </div>
+            </div>
+            <div>
+              <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:4px;">Diagnostic Assessment</div>
+              <div style="font-size:0.75rem;color:var(--text-primary);line-height:1.6;" id="inspect-comp-diag">
+                All 4 ESC controllers reporting nominal telemetry. Dynamic torque balancing actively compensating for wind gusts over Krishna River Basin.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3D Image Reference & Photogrammetry Gallery -->
+      <div class="mt-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:var(--text-bright);letter-spacing:0.06em;">
+              📷 3D DISASTER IMAGERY &amp; SENSOR REFERENCES
+            </div>
+            <div style="font-size:0.72rem;color:var(--text-secondary);">
+              High-resolution 3D CAD digital twins, LiDAR terrain photogrammetry models, and multispectral sensor payload references.
+            </div>
+          </div>
+          <span class="badge badge-cyan">3D SPATIAL DATA READY</span>
+        </div>
+
+        <div class="ref-gallery-grid">
+          <!-- Card 1 -->
+          <div class="ref-card">
+            <div class="ref-img-wrap">
+              <img src="assets/drone_3d_blueprint.jpg" alt="Drone 3D CAD Blueprint" class="ref-img" />
+              <div class="ref-badge">3D CAD BLUEPRINT</div>
+            </div>
+            <div class="ref-body">
+              <div>
+                <div class="ref-title">Rescue Drone D-01 3D Digital Twin</div>
+                <div class="ref-desc">
+                  Full CAD airframe schematic with LiDAR scanner, 4K thermal camera gimbal, RTK navigation array, and emergency beacon launcher.
+                </div>
+              </div>
+              <div class="ref-meta-row">
+                <span>Model: DJI Matrice 350 RTK-Mod</span>
+                <span>Render: 8K CAD Digital Twin</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="ref-card">
+            <div class="ref-img-wrap">
+              <img src="assets/disaster_3d_photogrammetry.jpg" alt="Disaster 3D Photogrammetry" class="ref-img" />
+              <div class="ref-badge" style="border-color:var(--warning);color:var(--warning);">3D PHOTOGRAMMETRY</div>
+            </div>
+            <div class="ref-body">
+              <div>
+                <div class="ref-title">Krishna Basin 3D LiDAR Elevation Model</div>
+                <div class="ref-desc">
+                  Photogrammetric surface mesh reconstruction showing flood depth contours, submerged residential sectors, and critical infrastructure risk heatmaps.
+                </div>
+              </div>
+              <div class="ref-meta-row">
+                <span>Resolution: 1.5 cm/px</span>
+                <span>Points: 2.8M LiDAR Pts</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="ref-card">
+            <div class="ref-img-wrap">
+              <img src="assets/multispectral_sensor_3d.jpg" alt="Multispectral Sensor 3D Cutaway" class="ref-img" />
+              <div class="ref-badge" style="border-color:var(--critical);color:var(--critical);">SENSOR PAYLOAD</div>
+            </div>
+            <div class="ref-body">
+              <div>
+                <div class="ref-title">3D Multispectral &amp; AI Gimbal Payload</div>
+                <div class="ref-desc">
+                  Technical cutaway of the 3-axis gimbal payload with FLIR thermal sensor, 4K 20x optical zoom lens, laser rangefinder, and embedded Jetson AI processor.
+                </div>
+              </div>
+              <div class="ref-meta-row">
+                <span>FOV: 84° Wide · 20x Zoom</span>
+                <span>Compute: 275 TOPS Edge AI</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section><!-- /page-3d -->
+
+
+    <!-- ╔═══════════════════════════════╗
+         ║   2. LIVE VIDEO PAGE          ║
+         ╚═══════════════════════════════╝ -->
+    <section class="page-view" id="page-video">
+      <h1 class="page-title">🎥 LIVE DRONE FEED</h1>
+      <div class="grid gap-4" style="grid-template-columns:1fr 300px;height:calc(100vh - var(--topbar-h) - var(--navbar-h) - 90px);">
+
+        <!-- Full video panel -->
+        <div class="card" style="position:relative;overflow:hidden;background:#000;">
+          <div class="hud-corner hud-tl"></div>
+          <div class="hud-corner hud-tr"></div>
+          <div class="hud-corner hud-bl"></div>
+          <div class="hud-corner hud-br"></div>
+
+          <canvas id="drone-canvas-2" style="width:100%;height:100%;display:block;"></canvas>
+          <div class="scan-overlay"></div>
+
+          <div class="video-overlay-header">
+            <div class="flex items-center gap-3">
+              <div class="live-badge">
+                <div class="pulse-dot-wrap" style="width:8px;height:8px;">
+                  <div class="pulse-dot-inner" style="width:5px;height:5px;"></div>
+                </div>
+                LIVE
+              </div>
+              <div>
+                <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:#fff;letter-spacing:0.08em;">DRONE D-01</div>
+                <div style="font-size:0.65rem;color:rgba(255,255,255,0.5);font-family:var(--font-mono);">AI Vision Active · YOLOv8-Disaster</div>
+              </div>
+            </div>
+            <div class="video-meta-row">
+              <div class="video-meta-item">
+                <span class="video-meta-label">Resolution</span>
+                <span class="video-meta-value">1080p</span>
+              </div>
+              <div class="video-meta-item">
+                <span class="video-meta-label">FPS</span>
+                <span class="video-meta-value" id="vid-fps-2">30</span>
+              </div>
+              <div class="video-meta-item">
+                <span class="video-meta-label">Signal</span>
+                <span class="video-meta-value" id="vid-signal-2">SIG 94%</span>
+              </div>
+              <div class="video-meta-item">
+                <span class="video-meta-label">Latency</span>
+                <span class="video-meta-value">42ms</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="video-overlay-footer">
+            <div style="font-family:var(--font-mono);font-size:0.70rem;color:rgba(0,245,255,0.8);">
+              GPS: <span id="vid-gps-lat">16.5062</span>, <span id="vid-gps-lng">80.6480</span>
+              &nbsp;|&nbsp; ALT: <span id="vid-alt">84</span>m
+              &nbsp;|&nbsp; SPD: <span id="vid-spd">18</span> km/h
+            </div>
+            <div style="font-family:var(--font-mono);font-size:0.75rem;color:rgba(255,255,255,0.8);" id="vid-time-2">18:42:31</div>
+          </div>
+        </div>
+
+        <!-- Right panel: recent detections on video page -->
+        <div class="card" style="overflow:hidden;display:flex;flex-direction:column;">
+          <div class="card-header">
+            <span class="section-title">🔍 DETECTIONS</span>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:var(--space-3);" id="video-det-feed">
+            <div style="text-align:center;padding:var(--space-6);color:var(--text-muted);font-size:0.75rem;">
+              Monitoring for detections…
+            </div>
+          </div>
+        </div>
+      </div>
+    </section><!-- /page-video -->
+
+
+    <!-- ╔═══════════════════════════════╗
+         ║   3. LIVE MAP PAGE            ║
+         ╚═══════════════════════════════╝ -->
+    <section class="page-view" id="page-map">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="page-title" style="margin:0;">📍 LIVE DISASTER MAP</h1>
+        <div class="flex gap-2">
+          <div class="badge badge-cyan">🚁 D-01 ACTIVE</div>
+          <div class="badge badge-critical">⚠ FLOOD ZONE ACTIVE</div>
+        </div>
+      </div>
+      <div class="card map-panel map-panel-full" style="position:relative;">
+        <div id="map-full" style="height:100%;"></div>
+
+        <!-- Map legend -->
+        <div class="map-legend">
+          <div style="font-family:var(--font-display);font-size:0.68rem;font-weight:700;letter-spacing:0.10em;color:var(--cyan);margin-bottom:var(--space-2);">LEGEND</div>
+          <div class="map-legend-item">🚁 Drone D-01</div>
+          <div class="map-legend-item">👤 Survivor</div>
+          <div class="map-legend-item">🔥 Fire</div>
+          <div class="map-legend-item">🌊 Flood Zone</div>
+          <div class="map-legend-item">⚠️ Danger Zone</div>
+          <div class="map-legend-item">🛡️ Safe Zone</div>
+          <div class="map-legend-item">🏥 Hospital</div>
+        </div>
+      </div>
+    </section><!-- /page-map -->
+
+
+    <!-- ╔═══════════════════════════════╗
+         ║   4. DETECTIONS PAGE          ║
+         ╚═══════════════════════════════╝ -->
+    <section class="page-view" id="page-detections">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="page-title" style="margin:0;">🔍 AI DETECTION LOG</h1>
+        <div class="flex gap-2">
+          <span style="font-size:0.75rem;color:var(--text-secondary);font-family:var(--font-mono);">Auto-refreshing in real-time</span>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="filter-row">
+        <span style="font-size:0.68rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);align-self:center;">TYPE:</span>
+        <button class="filter-pill active" data-group="type" data-value="all">All</button>
+        <button class="filter-pill" data-group="type" data-value="survivor">👤 Survivor</button>
+        <button class="filter-pill" data-group="type" data-value="fire">🔥 Fire</button>
+        <button class="filter-pill" data-group="type" data-value="flood">🌊 Flood</button>
+        <button class="filter-pill" data-group="type" data-value="smoke">💨 Smoke</button>
+        <button class="filter-pill" data-group="type" data-value="damaged">🏚️ Structure</button>
+        <button class="filter-pill" data-group="type" data-value="landslide">⛰️ Landslide</button>
+      </div>
+      <div class="filter-row" style="margin-top:calc(-1 * var(--space-2));">
+        <span style="font-size:0.68rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);align-self:center;">SEVERITY:</span>
+        <button class="filter-pill active" data-group="sev" data-value="all">All</button>
+        <button class="filter-pill" data-group="sev" data-value="critical" style="color:var(--critical);border-color:rgba(239,68,68,0.3);">CRITICAL</button>
+        <button class="filter-pill" data-group="sev" data-value="high" style="color:var(--warning);border-color:rgba(249,115,22,0.3);">HIGH</button>
+        <button class="filter-pill" data-group="sev" data-value="medium">MEDIUM</button>
+        <button class="filter-pill" data-group="sev" data-value="low">LOW</button>
+      </div>
+
+      <div class="card">
+        <div class="card-body p-3">
+          <div class="overflow-y-auto" style="max-height:calc(100vh - var(--topbar-h) - var(--navbar-h) - 220px);">
+            <table class="det-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Detection</th>
+                  <th>Severity</th>
+                  <th>Latitude</th>
+                  <th>Longitude</th>
+                  <th>Confidence</th>
+                  <th>Time</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="detections-tbody">
+                <tr>
+                  <td colspan="8" style="text-align:center;padding:var(--space-8);color:var(--text-muted);">
+                    🔍 Awaiting first AI detection…
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section><!-- /page-detections -->
+
+
+    <!-- ╔═══════════════════════════════╗
+         ║   5. MISSIONS PAGE            ║
+         ╚═══════════════════════════════╝ -->
+    <section class="page-view" id="page-missions">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="page-title" style="margin:0;">🚁 ACTIVE MISSION</h1>
+        <div class="flex gap-2">
+          <span class="badge badge-success">● MISSION IN PROGRESS</span>
+          <button class="btn btn-critical btn-sm">⛔ ABORT MISSION</button>
+        </div>
+      </div>
+
+      <div class="grid gap-4" style="grid-template-columns:1fr 1fr 340px;">
+
+        <!-- Mission overview -->
+        <div class="card">
+          <div class="card-header">
+            <span class="section-title">📋 MISSION OVERVIEW</span>
+          </div>
+          <div class="card-body">
+            <div style="margin-bottom:var(--space-4);">
+              <div style="font-family:var(--font-display);font-size:1.4rem;font-weight:700;color:var(--text-bright);">MSN-2024-047</div>
+              <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:2px;">Flood Disaster Response · Krishna River Basin</div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-4">
+              <div class="stat-card" style="padding:var(--space-3);">
+                <div class="stat-label">Mission Time</div>
+                <div class="stat-value text-cyan" style="font-size:1.4rem;" id="mission-elapsed-2">21:42</div>
+              </div>
+              <div class="stat-card" style="padding:var(--space-3);">
+                <div class="stat-label">Drone</div>
+                <div class="stat-value text-success" style="font-size:1.4rem;">D-01</div>
+              </div>
+              <div class="stat-card" style="padding:var(--space-3);">
+                <div class="stat-label">Target Area</div>
+                <div class="stat-value text-cyan" style="font-size:1.4rem;">12 km²</div>
+              </div>
+              <div class="stat-card" style="padding:var(--space-3);">
+                <div class="stat-label">Waypoints</div>
+                <div class="stat-value text-warning" style="font-size:1.4rem;">8</div>
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div style="font-size:0.72rem;color:var(--text-secondary);line-height:1.6;">
+              <div><strong style="color:var(--text-primary);">Objective:</strong> Search and rescue — flood victims in Krishna River Basin flood zone</div>
+              <div class="mt-2"><strong style="color:var(--text-primary);">Authority:</strong> NDRF, State EOC Vijayawada</div>
+              <div class="mt-2"><strong style="color:var(--text-primary);">Dispatcher:</strong> Control Operator Pradeep K.</div>
+              <div class="mt-2"><strong style="color:var(--text-primary);">Started:</strong> 18:21:00 IST · Sep 11, 2026</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Waypoints + Timeline -->
+        <div class="card">
+          <div class="card-header">
+            <span class="section-title">📍 FLIGHT PLAN</span>
+            <span class="badge badge-cyan">AUTONOMOUS</span>
+          </div>
+          <div class="card-body">
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="timeline-dot done"></div>
+                <div style="font-size:0.82rem;font-weight:600;">WP-1: Takeoff — Krishna River Bank</div>
+                <div style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">16.5062, 80.6480 · Alt: 80m · Done</div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot done"></div>
+                <div style="font-size:0.82rem;font-weight:600;">WP-2: Sector 7G — Residential Zone</div>
+                <div style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">16.5130, 80.6550 · Alt: 90m · Done</div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot active"></div>
+                <div style="font-size:0.82rem;font-weight:600;color:var(--cyan);">WP-3: Sector 3A — Industrial Zone ← CURRENT</div>
+                <div style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">16.5200, 80.6480 · Alt: 100m · In Progress</div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div style="font-size:0.82rem;font-weight:600;color:var(--text-secondary);">WP-4: Sector 5B — Agricultural Area</div>
+                <div style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">16.5180, 80.6380 · Alt: 95m · Pending</div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div style="font-size:0.82rem;font-weight:600;color:var(--text-secondary);">WP-5: Sector 8F — Canal Embankment</div>
+                <div style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">16.5100, 80.6300 · Alt: 85m · Pending</div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div style="font-size:0.82rem;font-weight:600;color:var(--text-secondary);">WP-6 → WP-8: Return loop</div>
+                <div style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">Perimeter scan · Pending</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mission quick stats -->
+        <div class="card">
+          <div class="card-header">
+            <span class="section-title">📊 MISSION STATS</span>
+          </div>
+          <div class="card-body p-3">
+            <div class="tele-row">
+              <span class="tele-key">Survivors Found</span>
+              <span class="tele-val text-critical" id="mis-survivors">0</span>
+            </div>
+            <div class="tele-row">
+              <span class="tele-key">Incidents Logged</span>
+              <span class="tele-val text-warning" id="mis-incidents">0</span>
+            </div>
+            <div class="tele-row">
+              <span class="tele-key">Area Scanned</span>
+              <span class="tele-val text-cyan" id="mis-area">0 km²</span>
+            </div>
+            <div class="tele-row">
+              <span class="tele-key">Coverage</span>
+              <span class="tele-val text-success" id="mis-coverage">0%</span>
+            </div>
+            <div class="tele-row">
+              <span class="tele-key">Battery Left</span>
+              <span class="tele-val" id="mis-battery">78%</span>
+            </div>
+            <div class="tele-row">
+              <span class="tele-key">WP Completed</span>
+              <span class="tele-val">2 / 8</span>
+            </div>
+            <div class="divider"></div>
+            <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--font-mono);text-align:center;padding:var(--space-2);">
+              EST. RETURN TIME: ~45 MIN
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section><!-- /page-missions -->
+
+
+    <!-- ╔═══════════════════════════════╗
+         ║   6. AI ORCHESTRATOR PAGE     ║
+         ╚═══════════════════════════════╝ -->
+    <section class="page-view" id="page-orchestrator">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="page-title" style="margin:0;">🤖 AI ORCHESTRATOR</h1>
+        <div class="flex items-center gap-3">
+          <div class="waveform">
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+          </div>
+          <span style="font-size:0.75rem;color:var(--cyan);font-family:var(--font-mono);">AI ENGINE ONLINE</span>
+        </div>
+      </div>
+
+      <div class="grid gap-4" style="grid-template-columns:1fr 340px;">
+
+        <!-- Main AI feed -->
+        <div class="card">
+          <div class="card-header">
+            <span class="section-title">📡 AI REASONING FEED</span>
+            <div class="flex items-center gap-2">
+              <span style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">YOLOv8 · GPT-4V · FloodNet</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <!-- AI System info -->
+            <div class="card" style="background:rgba(0,245,255,0.03);border-color:var(--border-subtle);margin-bottom:var(--space-4);">
+              <div class="card-body p-3">
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <div class="tele-key mb-1">Vision Model</div>
+                    <div style="font-size:0.78rem;font-weight:600;color:var(--cyan);">YOLOv8-Disaster</div>
+                    <div style="font-size:0.60rem;color:var(--text-muted);">v2.1.4 · Fine-tuned</div>
+                  </div>
+                  <div>
+                    <div class="tele-key mb-1">NLP Reasoner</div>
+                    <div style="font-size:0.78rem;font-weight:600;color:var(--cyan);">GPT-4 Vision</div>
+                    <div style="font-size:0.60rem;color:var(--text-muted);">Emergency-tuned</div>
+                  </div>
+                  <div>
+                    <div class="tele-key mb-1">Flood Predictor</div>
+                    <div style="font-size:0.78rem;font-weight:600;color:var(--cyan);">FloodNet-3D</div>
+                    <div style="font-size:0.60rem;color:var(--text-muted);">IMD integrated</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- AI Feed -->
+            <div class="scroll-panel scroll-panel-xl" id="ai-feed-full">
+              <!-- Feed items injected here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Priority Queue + Recommended Actions -->
+        <div style="display:flex;flex-direction:column;gap:var(--space-4);">
+
+          <!-- Priority Queue -->
+          <div class="card">
+            <div class="card-header">
+              <span class="section-title">🎯 PRIORITY QUEUE</span>
+            </div>
+            <div class="card-body p-3">
+              <div id="priority-queue">
+                <div style="text-align:center;padding:var(--space-4);color:var(--text-muted);font-size:0.75rem;">
+                  Queue builds as detections arrive…
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recommended Actions -->
+          <div class="card flex-1">
+            <div class="card-header">
+              <span class="section-title">💡 RECOMMENDED ACTIONS</span>
+            </div>
+            <div class="card-body p-3">
+              <div style="display:flex;flex-direction:column;gap:var(--space-2);">
+                <div class="priority-item" style="border-color:rgba(239,68,68,0.3);">
+                  <span style="font-size:1rem;">🆘</span>
+                  <div style="flex:1;">
+                    <div style="font-size:0.78rem;font-weight:600;">Deploy Ground Team Alpha</div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);">Nearest to survivor cluster</div>
+                  </div>
+                  <button class="btn btn-critical btn-xs">DISPATCH</button>
+                </div>
+                <div class="priority-item" style="border-color:rgba(249,115,22,0.3);">
+                  <span style="font-size:1rem;">🚁</span>
+                  <div style="flex:1;">
+                    <div style="font-size:0.78rem;font-weight:600;">Air Extraction — Sector 7G</div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);">Rooftop survivors identified</div>
+                  </div>
+                  <button class="btn btn-ghost btn-xs">PLAN</button>
+                </div>
+                <div class="priority-item">
+                  <span style="font-size:1rem;">🌊</span>
+                  <div style="flex:1;">
+                    <div style="font-size:0.78rem;font-weight:600;">Extend Flood Zone Perimeter</div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);">Rising water detected</div>
+                  </div>
+                  <button class="btn btn-ghost btn-xs">PLAN</button>
+                </div>
+                <div class="priority-item">
+                  <span style="font-size:1rem;">📡</span>
+                  <div style="flex:1;">
+                    <div style="font-size:0.78rem;font-weight:600;">Reposition Drone to Sector 3A</div>
+                    <div style="font-size:0.62rem;color:var(--text-muted);">Coverage gap identified</div>
+                  </div>
+                  <button class="btn btn-ghost btn-xs">EXECUTE</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section><!-- /page-orchestrator -->
+
+
+    <!-- ╔═══════════════════════════════╗
+         ║   7. REPORTS PAGE             ║
+         ╚═══════════════════════════════╝ -->
+    <section class="page-view" id="page-reports">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="page-title" style="margin:0;">📋 INCIDENT REPORTS</h1>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨️ Print Report</button>
+          <button class="btn btn-primary btn-sm">📤 Export PDF</button>
+        </div>
+      </div>
+
+      <!-- Summary cards -->
+      <div class="stats-bar mb-4" style="grid-template-columns:repeat(4,1fr);">
+        <div class="stat-card">
+          <div class="stat-label">Total Detections</div>
+          <div class="stat-value text-cyan" id="rpt-detections">0</div>
+          <div class="stat-sub">This mission</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Survivors Found</div>
+          <div class="stat-value text-critical" id="rpt-survivors">0</div>
+          <div class="stat-sub">Confirmed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Critical Incidents</div>
+          <div class="stat-value text-warning" id="rpt-critical">0</div>
+          <div class="stat-sub">Requiring response</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Area Covered</div>
+          <div class="stat-value text-success" id="rpt-area">0 km²</div>
+          <div class="stat-sub">Of 12 km² target</div>
+        </div>
+      </div>
+
+      <!-- Report body -->
+      <div class="grid grid-cols-2 gap-4">
+        <div class="card">
+          <div class="card-header">
+            <span class="section-title">📄 MISSION REPORT</span>
+          </div>
+          <div class="card-body">
+            <div class="report-card">
+              <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:var(--text-bright);margin-bottom:var(--space-2);">
+                Mission MSN-2024-047
+              </div>
+              <div style="font-size:0.72rem;color:var(--text-secondary);line-height:1.8;">
+                <div><strong>Date:</strong> 11 September 2026</div>
+                <div><strong>Disaster Type:</strong> Severe Flood — Krishna River Basin</div>
+                <div><strong>Location:</strong> Vijayawada, Andhra Pradesh, India</div>
+                <div><strong>Drone:</strong> D-01 (DJI Matrice 350 RTK)</div>
+                <div><strong>Operator:</strong> Pradeep K., Control Center</div>
+                <div><strong>Authority:</strong> NDRF, State EOC</div>
+              </div>
+            </div>
+
+            <div class="report-card">
+              <div style="font-family:var(--font-display);font-size:0.95rem;font-weight:700;color:var(--text-bright);margin-bottom:var(--space-2);">
+                Executive Summary
+              </div>
+              <div style="font-size:0.72rem;color:var(--text-secondary);line-height:1.8;">
+                Drone D-01 was deployed at 18:21 IST to conduct aerial search and rescue operations
+                in the Krishna River Basin flood zone. The AI vision system (YOLOv8-Disaster v2.1)
+                detected multiple survivors, active fire zones, and rapidly expanding flood waters.
+                All detections were geolocated with high GPS accuracy and transmitted to the
+                State Emergency Operations Center in real-time.
+              </div>
+            </div>
+
+            <div class="report-card">
+              <div style="font-family:var(--font-display);font-size:0.95rem;font-weight:700;color:var(--text-bright);margin-bottom:var(--space-2);">
+                Incident Summary
+              </div>
+              <div id="report-incident-summary" style="font-size:0.72rem;color:var(--text-secondary);line-height:1.8;">
+                No incidents logged yet. Awaiting first detection…
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="section-title">📊 DETECTION BREAKDOWN</span>
+          </div>
+          <div class="card-body p-3">
+            <!-- Type breakdown rows, updated by JS -->
+            <div id="report-type-breakdown">
+              <div style="text-align:center;padding:var(--space-6);color:var(--text-muted);font-size:0.75rem;">
+                Data populates as detections arrive…
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div style="font-family:var(--font-display);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;color:var(--cyan);text-transform:uppercase;margin-bottom:var(--space-3);">
+              SYSTEM INFO
+            </div>
+            <div class="telemetry-grid">
+              <div class="tele-row">
+                <span class="tele-key">Vision Model</span>
+                <span class="tele-val">YOLOv8-D v2.1</span>
+              </div>
+              <div class="tele-row">
+                <span class="tele-key">GPS System</span>
+                <span class="tele-val">RTK-GNSS</span>
+              </div>
+              <div class="tele-row">
+                <span class="tele-key">Accuracy</span>
+                <span class="tele-val">±2–4 m</span>
+              </div>
+              <div class="tele-row">
+                <span class="tele-key">Video</span>
+                <span class="tele-val">1080p · 30FPS</span>
+              </div>
+              <div class="tele-row">
+                <span class="tele-key">Uplink</span>
+                <span class="tele-val">4G LTE · AES-256</span>
+              </div>
+              <div class="tele-row">
+                <span class="tele-key">Protocol</span>
+                <span class="tele-val">MAVLINK 2.0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section><!-- /page-reports -->
+
+  </main><!-- /main-content -->
+</div><!-- /app-shell -->
+
+<!-- ── TOAST CONTAINER ── -->
+<div id="toast-container"></div>
+
+<!-- ── CLOCK ── -->
+<div id="clock-time" style="display:none;"></div>
+<div id="clock-date" style="display:none;"></div>
+
+<!-- ── SUPABASE CONFIG MODAL ── -->
+<div class="supabase-modal-overlay" id="supabase-modal-overlay" onclick="closeSupabaseModal(event)">
+  <div class="supabase-modal" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between mb-4">
+      <div style="font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--cyan);letter-spacing:0.06em;">
+        ⚡ SUPABASE BACKEND CONFIGURATION
+      </div>
+      <button class="btn btn-ghost btn-xs" onclick="closeSupabaseModal()">✕</button>
+    </div>
+    
+    <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:var(--space-4);line-height:1.5;">
+      Configure your Supabase Project credentials to connect real PostgreSQL database, PostGIS spatial queries, and Realtime WebSocket updates.
+    </div>
+
+    <div class="mb-3">
+      <label style="font-size:0.68rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">VITE_SUPABASE_URL</label>
+      <input type="text" id="cfg-supabase-url" class="modal-input" placeholder="https://your-project.supabase.co" />
+    </div>
+
+    <div class="mb-4">
+      <label style="font-size:0.68rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">VITE_SUPABASE_ANON_KEY</label>
+      <input type="password" id="cfg-supabase-key" class="modal-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." />
+    </div>
+
+    <div class="card p-3 mb-4" style="background:rgba(0,245,255,0.03);border-color:var(--border-subtle);">
+      <div class="flex items-center justify-between">
+        <div>
+          <div style="font-size:0.75rem;font-weight:600;color:var(--text-bright);">Connection Health: <span id="supabase-modal-state" style="color:var(--cyan);">Checking…</span></div>
+          <div style="font-size:0.62rem;color:var(--text-muted);font-family:var(--font-mono);">Ping Latency: <span id="supabase-ping-text">—</span></div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="ResqSupabase.checkHealth()">🔄 Test Ping</button>
+      </div>
+    </div>
+
+    <div class="flex gap-2 justify-end">
+      <button class="btn btn-ghost btn-sm" onclick="closeSupabaseModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveSupabaseConfig()">Save &amp; Connect</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCRIPTS ── -->
+<script src="js/drone-sim.js"></script>
+<script src="js/drone-3d.js"></script>
+<script src="js/ai-engine.js"></script>
+<script src="js/map.js"></script>
+<script src="js/video.js"></script>
+<script src="js/ui.js"></script>
+
+<!-- Supabase Client & Service Layer -->
+<script src="js/supabase-client.js"></script>
+<script src="js/services/droneService.js"></script>
+<script src="js/services/telemetryService.js"></script>
+<script src="js/services/incidentService.js"></script>
+<script src="js/services/detectionService.js"></script>
+<script src="js/services/survivorService.js"></script>
+<script src="js/services/alertService.js"></script>
+<script src="js/services/missionService.js"></script>
+<script src="js/services/hospitalService.js"></script>
+<script src="js/services/imageService.js"></script>
+<script src="js/services/auditService.js"></script>
+<script src="js/services/realtimeManager.js"></script>
+
+<script src="js/app.js"></script>
+
+<!-- ── Auth Session & Logout ── -->
+<script>
+(function () {
+  // ── Populate user info in topbar ──
+  async function populateUserInfo(user) {
+    if (!user) return;
+    const meta       = user.user_metadata || {};
+    let fullName     = meta.full_name || user.email?.split('@')[0] || 'Operator';
+    let email        = user.email || '';
+    let roleText     = '🟢 Authenticated · Control Operator';
+
+    // If Supabase client available, query profiles table for full name and role
+    if (window.ResqSupabase && user.id) {
+      try {
+        const client = ResqSupabase.getClient();
+        if (client) {
+          const { data: profile } = await client.from('profiles').select('*').eq('id', user.id).maybeSingle();
+          if (profile) {
+            if (profile.full_name) fullName = profile.full_name;
+            if (profile.email)     email = profile.email;
+            if (profile.role)      roleText = `🟢 ${profile.role.toUpperCase()} · Control Center`;
+          }
+        }
+      } catch (e) { /* non-blocking */ }
+    }
+
+    const initials   = fullName.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2) || 'OP';
+    const avatarBtn  = document.getElementById('user-avatar-btn');
+    const ddName     = document.getElementById('user-dd-name');
+    const ddEmail    = document.getElementById('user-dd-email');
+    const ddRole     = document.querySelector('.user-dropdown-role');
+    const userAvatar = document.querySelector('.user-avatar');
+
+    if (avatarBtn)  avatarBtn.textContent = initials;
+    if (ddName)     ddName.textContent    = fullName;
+    if (ddEmail)    ddEmail.textContent   = email;
+    if (ddRole)     ddRole.textContent    = roleText;
+    if (userAvatar) userAvatar.title      = fullName;
+  }
+
+  // Populate on load from session guard or demo user
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.__RESQ_USER) {
+      populateUserInfo(window.__RESQ_USER);
+    } else {
+      try {
+        const demoUser = JSON.parse(sessionStorage.getItem('resq_demo_user') || 'null');
+        if (demoUser) populateUserInfo(demoUser);
+      } catch (e) {}
+    }
+
+    // Also subscribe to auth changes via ResqSupabase client
+    if (window.ResqSupabase) {
+      const client = ResqSupabase.getClient();
+      if (client) {
+        client.auth.getUser().then(({ data: { user } }) => {
+          if (user) populateUserInfo(user);
+        }).catch(() => {});
+        client.auth.onAuthStateChange((event, session) => {
+          if (event === 'SIGNED_OUT') {
+            sessionStorage.clear();
+            window.location.replace('auth.html');
+          }
+          if (session?.user) populateUserInfo(session.user);
+        });
+      }
+    }
+  });
+
+  // ── Logout handler ──
+  window.handleLogout = async function () {
+    const client = window.ResqSupabase?.getClient();
+    if (client) {
+      await client.auth.signOut();
+    }
+    // Clear session data
+    sessionStorage.clear();
+    window.location.replace('auth.html');
+  };
+
+  // ── User dropdown toggle ──
+  window.toggleUserMenu = function () {
+    const dd = document.getElementById('user-dropdown');
+    if (!dd) return;
+    const isOpen = dd.style.display !== 'none';
+    dd.style.display = isOpen ? 'none' : 'block';
+  };
+
+  // Close dropdown on outside click
+  document.addEventListener('click', (e) => {
+    const wrap = document.getElementById('user-avatar-wrap');
+    const dd   = document.getElementById('user-dropdown');
+    if (dd && wrap && !wrap.contains(e.target)) {
+      dd.style.display = 'none';
+    }
+  });
+})();
+</script>
+
+<!-- ── 3D Viewport Controls & Event Handlers ── -->
+<script>
+  function set3DCam(mode, btn) {
+    document.querySelectorAll('.hud-3d-top .hud-pill-btn').forEach(b => {
+      if (b.textContent.includes('Orbit') || b.textContent.includes('Chase') || b.textContent.includes('FPV') || b.textContent.includes('Top-Down')) {
+        b.classList.remove('active');
+      }
+    });
+    if (btn) btn.classList.add('active');
+    Drone3DEngine.setCameraMode(mode);
+  }
+
+  function set3DShader(mode, btn) {
+    document.querySelectorAll('.hud-3d-top .hud-pill-btn').forEach(b => {
+      if (b.textContent.includes('Tactical') || b.textContent.includes('LiDAR') || b.textContent.includes('FLIR') || b.textContent.includes('CAD')) {
+        b.classList.remove('active');
+      }
+    });
+    if (btn) btn.classList.add('active');
+    Drone3DEngine.setRenderMode(mode);
+  }
+
+  function toggle3DExplode(btn) {
+    const isExploded = Drone3DEngine.toggleExplodedView();
+    if (btn) {
+      btn.classList.toggle('active', isExploded);
+      btn.textContent = isExploded ? '🔄 Assemble CAD' : '💥 Explode CAD';
+    }
+  }
+
+  function selectComp(key, btn) {
+    document.querySelectorAll('#page-3d .card-body .btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    Drone3DEngine.inspectComponent(key);
+  }
+
+  // ── Supabase Modal Handlers ──
+  function openSupabaseModal() {
+    const overlay = document.getElementById('supabase-modal-overlay');
+    const cfg = ResqSupabase.getConfig();
+    const urlInput = document.getElementById('cfg-supabase-url');
+    const keyInput = document.getElementById('cfg-supabase-key');
+
+    if (urlInput) urlInput.value = cfg.url || '';
+    if (keyInput) keyInput.value = cfg.anonKey || '';
+
+    const stateEl = document.getElementById('supabase-modal-state');
+    if (stateEl) stateEl.textContent = ResqSupabase.getState();
+
+    if (overlay) overlay.classList.add('active');
+  }
+
+  function closeSupabaseModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    const overlay = document.getElementById('supabase-modal-overlay');
+    if (overlay) overlay.classList.remove('active');
+  }
+
+  async function saveSupabaseConfig() {
+    const url = document.getElementById('cfg-supabase-url')?.value;
+    const key = document.getElementById('cfg-supabase-key')?.value;
+
+    if (!url || !key) {
+      UI.showToast('Configuration Missing', 'Please provide both URL and Anon Key', 'warning');
+      return;
+    }
+
+    UI.showToast('Connecting to Supabase', 'Testing connection to PostgreSQL database...', 'info');
+    const ok = await ResqSupabase.saveCredentials(url, key);
+
+    if (ok) {
+      UI.showToast('Supabase Connected!', 'Connected to live database. Realtime synchronization active.', 'success');
+      closeSupabaseModal();
+      if (window.setMode) window.setMode('LIVE');
+    } else {
+      UI.showToast('Connection Warning', 'Could not ping Supabase database. Please check credentials or CORS settings.', 'warning');
+    }
+  }
+
+  function toggleDataMode() {
+    const current = window.AppState?.DATA_MODE || 'DEMO';
+    const target = current === 'LIVE' ? 'DEMO' : 'LIVE';
+    if (window.setMode) {
+      window.setMode(target);
+      UI.showToast('Data Mode Changed', `Switched operational mode to ${target} MODE`, target === 'LIVE' ? 'success' : 'info');
+    }
+  }
+</script>
+
+<!-- ── Extra wiring for secondary video canvas & reports ── -->
+<script>
+  // Mirror video canvas to the Live Video page canvas
+  (function () {
+    let canvas2Initialized = false;
+    const origNav = window.navigate;
+    window.navigate = function (page) {
+      origNav(page);
+      if (page === 'video' && !canvas2Initialized) {
+        canvas2Initialized = true;
+        // Mirror updates
+        const canvas2 = document.getElementById('drone-canvas-2');
+        if (canvas2) {
+          const ctx2 = canvas2.getContext('2d');
+          function syncCanvas() {
+            const c1 = document.getElementById('drone-canvas');
+            if (c1 && c1.width > 0) {
+              canvas2.width  = canvas2.offsetWidth;
+              canvas2.height = canvas2.offsetHeight;
+              ctx2.drawImage(c1, 0, 0, canvas2.width, canvas2.height);
+            }
+            requestAnimationFrame(syncCanvas);
+          }
+          syncCanvas();
+        }
+      }
+      // Sync mission page stats
+      if (page === 'missions') {
+        document.getElementById('mis-battery')?.textContent && '';
+        // Wire the stats
+        const s = (id) => document.getElementById('stat-' + id)?.textContent || '0';
+        ['survivors','incidents','critical','area','coverage'].forEach(k => {
+          const el = document.getElementById('mis-' + k) || document.getElementById('rpt-' + k);
+          if (el) el.textContent = s(k);
+        });
+      }
+      // Sync report page
+      if (page === 'reports') {
+        const syncStat = (from, to) => {
+          const src = document.getElementById(from);
+          const dst = document.getElementById(to);
+          if (src && dst) dst.textContent = src.textContent;
+        };
+        syncStat('stat-incidents', 'rpt-detections');
+        syncStat('stat-survivors', 'rpt-survivors');
+        syncStat('stat-critical',  'rpt-critical');
+        syncStat('stat-area',      'rpt-area');
+      }
+    };
+  })();
+
+  // Wire detection events to secondary video page feed and extra telemetry fields
+  document.addEventListener('DOMContentLoaded', () => {
+    // Patch AI engine listener to also update secondary page elements
+    AIEngine.onDetection(det => {
+      // Video page det feed
+      const vfeed = document.getElementById('video-det-feed');
+      if (vfeed) {
+        const el = document.createElement('div');
+        el.className = 'incident-item new-flash detection-pop ' + (det.severity === 'critical' ? 'critical' : '');
+        el.style.marginBottom = '8px';
+        el.innerHTML = `
+          <div class="incident-icon">${det.icon}</div>
+          <div class="incident-body">
+            <div class="incident-title">${det.label}</div>
+            <div class="incident-meta">${det.confidence}% confidence · ${det.timestamp}</div>
+          </div>
+          <span class="badge badge-${det.severity === 'critical' ? 'critical' : det.severity === 'high' ? 'warning' : 'info'}">${det.severity}</span>
+        `;
+        if (vfeed.firstChild?.textContent?.includes('Monitoring')) vfeed.innerHTML = '';
+        vfeed.insertBefore(el, vfeed.firstChild);
+      }
+
+      // Update reports breakdown
+      const breakdown = document.getElementById('report-type-breakdown');
+      if (breakdown && AppState?.detections) {
+        const counts = {};
+        AppState.detections.forEach(d => { counts[d.label] = (counts[d.label] || 0) + 1; });
+        breakdown.innerHTML = Object.entries(counts)
+          .sort(([,a],[,b]) => b - a)
+          .map(([label, count], i) => {
+            const type = AIEngine.getDetectionTypes().find(t => t.label === label);
+            const pct = Math.round((count / AppState.detections.length) * 100);
+            return `
+              <div class="tele-row">
+                <span class="tele-key">${type?.icon || '⚠️'} ${label}</span>
+                <div class="flex items-center gap-2">
+                  <div style="width:60px;height:3px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;">
+                    <div style="width:${pct}%;height:100%;background:${type?.color || 'var(--cyan)'};border-radius:2px;"></div>
+                  </div>
+                  <span class="tele-val">${count}</span>
+                </div>
+              </div>`;
+          }).join('');
+
+        // Update report incident summary
+        const summary = document.getElementById('report-incident-summary');
+        if (summary && AppState.detections.length > 0) {
+          const critCount = AppState.detections.filter(d => d.severity === 'critical').length;
+          const highCount = AppState.detections.filter(d => d.severity === 'high').length;
+          summary.innerHTML = `
+            A total of <strong style="color:var(--text-bright);">${AppState.detections.length}</strong> AI detections recorded.
+            <strong style="color:var(--critical);">${critCount} critical</strong> incidents requiring immediate response.
+            <strong style="color:var(--warning);">${highCount} high-priority</strong> incidents monitored.
+            All coordinates geo-referenced with RTK-GNSS precision (±2–4m accuracy).
+            Data transmitted to NDRF and State EOC in real-time.
+          `;
+        }
+      }
+
+      // Mission page
+      syncMissionStats();
+    });
+
+    // Periodic stat sync
+    setInterval(syncMissionStats, 5000);
+
+    // Secondary telemetry for video page
+    DroneSimulator.onUpdate(state => {
+      const setT = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      setT('vid-fps-2',    state.fps + ' FPS');
+      setT('vid-signal-2', 'SIG ' + state.signalDisplay + '%');
+      setT('vid-time-2',   new Date().toLocaleTimeString('en-IN', { hour12: false }));
+      setT('vid-gps-lat',  state.latDisplay);
+      setT('vid-gps-lng',  state.lngDisplay);
+      setT('vid-alt',      state.altDisplay);
+      setT('vid-spd',      state.speedDisplay);
+
+      // Mission battery
+      setT('mis-battery', state.batteryDisplay + '%');
+    });
+  });
+
+  function syncMissionStats() {
+    const s = id => document.getElementById('stat-' + id)?.textContent || '0';
+    ['survivors','incidents','critical','area','coverage'].forEach(k => {
+      const m = document.getElementById('mis-' + k);
+      if (m) m.textContent = s(k);
+    });
+    const r = (from, to) => {
+      const src = document.getElementById(from);
+      const dst = document.getElementById(to);
+      if (src && dst) dst.textContent = src.textContent;
+    };
+    r('stat-incidents','rpt-detections');
+    r('stat-survivors','rpt-survivors');
+    r('stat-critical','rpt-critical');
+    r('stat-area','rpt-area');
+  }
+</script>
+
+</body>
+</html>
